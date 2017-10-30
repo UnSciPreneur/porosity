@@ -222,12 +222,14 @@ VMState::executeInstruction(
             m_stack[0] = reg;
             break;
         }
-        /*
         case Instruction::CALLDATASIZE:
         {
+            StackRegister reg = { "", "", UserInput, 0, 0 };
+            reg.value = m_data.size();
+            reg.type = UserInput;
+            pushStack(reg);
             break;
         }
-        */
         case Instruction::MSTORE:
         {
             uint32_t offset = int(GetStackEntryById(0).value);
@@ -246,13 +248,13 @@ VMState::executeInstruction(
             popStack();
 
             m_stack[0].name = argname.str();
+            break;
         }
-        break;
         case Instruction::SSTORE:
             // TODO:
             popStack();
             popStack();
-        break;
+            break;
         case Instruction::MLOAD:
         {
             uint32_t offset = int(GetStackEntryById(0).value);
@@ -267,8 +269,8 @@ VMState::executeInstruction(
                 argname << "]";
                 GetStackEntryById(0).name = argname.str();
             }
+            break;
         }
-        break;
         case Instruction::SLOAD:
         {
             stringstream argname;
@@ -294,6 +296,15 @@ VMState::executeInstruction(
             //GetStackEntryById(0).value = u256(dev::keccak256(GetStackEntryById(0).value));
             GetStackEntryById(0) = *getMemoryData(offset);
             m_stack[0].type = RegTypeLabelSha3;
+            break;
+        }
+        case Instruction::BALANCE:
+        {
+            StackRegister reg = { "", "", ConstantComputed, 0, 0 };
+            reg.value = 10000000;
+            reg.type = ConstantComputed;
+            pushStack(reg);
+
             break;
         }
         case Instruction::CALL:
@@ -549,7 +560,7 @@ VMState::executeInstruction(
         }
         case Instruction::ISZERO:
         {
-            m_stack[0].value = (m_stack[0].value == 0);
+            m_stack[0].value = (m_stack[0].value == u256(0));
             m_stack[0].type = RegTypeFlag;
             break;
         }
@@ -667,6 +678,11 @@ VMState::executeInstruction(
             pushStack(reg);
             break;
         }
+        case Instruction::REVERT:
+        {
+            return false;
+            break;
+        }
         
         default:
             printf("%s: NOT_IMPLEMENTED: %s\n", __FUNCTION__, info.name.c_str());
@@ -782,9 +798,9 @@ VMState::executeBlock(
                     break;
                 }
 
-                if ((opcde->stack.size() && (opcde->stack[0].value != _block->dstDefault)) || (_block->dstDefault == int(NODE_DEADEND))) {
-                    uint32_t newDest = int(opcde->stack[0].value);
-                    if (g_VerboseLevel >= 2) printf("ERR: Invalid destionation. (0x%08X -> 0x%08X)\n", _block->dstDefault, newDest);
+                if ((opcde->stack.size() && (opcde->stack[0].value != u256(_block->dstDefault))) || (_block->dstDefault == int(NODE_DEADEND))) {
+                    auto newDest = static_cast<uint32_t>(int(opcde->stack[0].value));
+                    if (g_VerboseLevel >= 2) printf("ERR: Invalid destination. (0x%08X -> 0x%08X)\n", _block->dstDefault, newDest);
                     _block->dstDefault = newDest;
                     _block->nextDefault = getBlockAt(newDest);
                 }
@@ -795,8 +811,8 @@ VMState::executeBlock(
                     break;
                 }
 
-                if ((opcde->stack.size() && opcde->stack[0].value != _block->dstJUMPI)) {
-                    uint32_t newDest = int(opcde->stack[0].value);
+                if ((opcde->stack.size() && opcde->stack[0].value != u256(_block->dstJUMPI))) {
+                    auto newDest = static_cast<uint32_t>(int(opcde->stack[0].value));
                     if (g_VerboseLevel >= 2) printf("ERR: Invalid destionation. (0x%08X -> 0x%08X)\n", _block->dstJUMPI, newDest);
                     _block->dstJUMPI = newDest;
                     _block->nextJUMPI = getBlockAt(newDest);
@@ -819,7 +835,7 @@ VMState::executeBlock(
             default:
                 break;
         }
-
+        // ToDo: set permission2fork=true (last argument)?
         bool ret = executeInstruction(opcde->offInfo.offset, opcde->offInfo.inst, opcde->offInfo.data, false);
     }
 
@@ -874,11 +890,11 @@ VMState::executeByteCode(
     while (true)
     {
         auto it = _byteCodeRuntime->begin() + m_eip;
-        Instruction instr = Instruction(*it);
+        auto instr = Instruction(*it);
         size_t additional = 0;
-        if (isValidInstruction(instr)) additional = instructionInfo(instr).additional;
+        if (isValidInstruction(instr)) additional = static_cast<size_t>(instructionInfo(instr).additional);
 
-        uint32_t offset = std::distance(_byteCodeRuntime->begin(), it);
+        auto offset = static_cast<uint32_t>(std::distance(_byteCodeRuntime->begin(), it));
         u256 data;
 
         for (size_t i = 0; i < additional; ++i)
@@ -938,11 +954,11 @@ InstructionContext::getContextForInstruction(
     string exp;
 
     Instruction instr = m_instr;
-    StackRegister *first = 0;
+    StackRegister *first = nullptr;
     if (m_stack.size() > 0) first = &m_stack[0];
-    StackRegister *second = 0;
+    StackRegister *second = nullptr;
     if (m_stack.size() > 1) second = &m_stack[1];
-    StackRegister *third = 0;
+    StackRegister *third = nullptr;
     if (m_stack.size() > 2) third = &m_stack[2];
 
     switch (m_instr) {
@@ -950,7 +966,7 @@ InstructionContext::getContextForInstruction(
         {
             if (g_VerboseLevel >= 6) {
                 stringstream argname;
-                uint32_t offset = int(first->value);
+                auto offset = static_cast<uint32_t>(int(first->value));
                 argname << "arg_";
                 argname << std::hex << offset;
 
@@ -1091,7 +1107,7 @@ InstructionContext::getContextForInstruction(
             stringstream argname;
             string var_name;
 
-            uint32_t offset = int(first->value);
+            auto offset = static_cast<uint32_t>(int(first->value));
             argname << "store_";
             argname << std::hex << offset;
 
@@ -1107,7 +1123,7 @@ InstructionContext::getContextForInstruction(
         case Instruction::MSTORE:
         {
             stringstream argname;
-            uint32_t offset = int(first->value);
+            auto offset = static_cast<uint32_t>(int(first->value));
             argname << "memory[0x";
             argname << std::hex << offset;
             argname << "]";
@@ -1134,8 +1150,8 @@ InstructionContext::getContextForInstruction(
         }
         case Instruction::SHA3:
         {
-            uint64_t offset = int(first->value);
-            uint64_t size = int(second->value);
+            auto offset = static_cast<uint64_t>(int(first->value));
+            auto size = static_cast<uint64_t>(int(second->value));
             // stack[0] = sha3(memStorage + offset, size);
 
     #if (g_VerboseLevel >= 6)
